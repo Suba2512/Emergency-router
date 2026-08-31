@@ -4,23 +4,25 @@ Simulated Road Network Emergency Navigation System
 """
 
 import streamlit as st
-import plotly.graph_objects as go
 import heapq
 import math
 
-# ==============================================================================
+
+# ============================================================================== 
 # 1. PAGE CONFIGURATION
-# ==============================================================================
+# ============================================================================== 
+
 st.set_page_config(
     page_title="AI Emergency Route Finder",
     page_icon="🚑",
     layout="wide"
 )
 
-# ==============================================================================
+
+# ============================================================================== 
 # 2. SIMULATED ROAD NETWORK DATA
-# ==============================================================================
-# Predefined 2D coordinates (x, y) for nodes in the simulated city map
+# ============================================================================== 
+
 COORDINATES = {
     "Accident Spot": (1.0, 3.0),
     "Junction A": (3.0, 5.0),
@@ -31,51 +33,78 @@ COORDINATES = {
     "Hospital B": (9.0, 1.0)
 }
 
-# Graph adjacency list: Node -> list of tuples (neighbor, road_distance_km)
 ROAD_NETWORK = {
-    "Accident Spot": [("Junction A", 4.0), ("Junction B", 3.0)],
-    "Junction A": [("Accident Spot", 4.0), ("Junction B", 2.5), ("Junction C", 4.0)],
-    "Junction B": [("Accident Spot", 3.0), ("Junction A", 2.5), ("Junction D", 4.5)],
-    "Junction C": [("Junction A", 4.0), ("Junction D", 3.5), ("Hospital A", 3.0)],
-    "Junction D": [("Junction B", 4.5), ("Junction C", 3.5), ("Hospital A", 5.0), ("Hospital B", 3.0)],
-    "Hospital A": [("Junction C", 3.0), ("Junction D", 5.0)],
-    "Hospital B": [("Junction D", 3.0)]
+    "Accident Spot": [
+        ("Junction A", 4.0),
+        ("Junction B", 3.0)
+    ],
+
+    "Junction A": [
+        ("Accident Spot", 4.0),
+        ("Junction B", 2.5),
+        ("Junction C", 4.0)
+    ],
+
+    "Junction B": [
+        ("Accident Spot", 3.0),
+        ("Junction A", 2.5),
+        ("Junction D", 4.5)
+    ],
+
+    "Junction C": [
+        ("Junction A", 4.0),
+        ("Junction D", 3.5),
+        ("Hospital A", 3.0)
+    ],
+
+    "Junction D": [
+        ("Junction B", 4.5),
+        ("Junction C", 3.5),
+        ("Hospital A", 5.0),
+        ("Hospital B", 3.0)
+    ],
+
+    "Hospital A": [
+        ("Junction C", 3.0),
+        ("Junction D", 5.0)
+    ],
+
+    "Hospital B": [
+        ("Junction D", 3.0)
+    ]
 }
 
-# ==============================================================================
+
+# ============================================================================== 
 # 3. HEURISTIC CALCULATION
-# ==============================================================================
-def calculate_euclidean_distance(node_a: str, node_b: str) -> float:
-    """
-    Computes Euclidean straight-line distance h(n) between two graph nodes.
-    Formula: sqrt((x2 - x1)^2 + (y2 - y1)^2)
-    """
+# ============================================================================== 
+
+def calculate_euclidean_distance(node_a, node_b):
     x1, y1 = COORDINATES[node_a]
     x2, y2 = COORDINATES[node_b]
+
     return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
-# ==============================================================================
-# 4. GREEDY BEST-FIRST SEARCH ALGORITHM
-# ==============================================================================
-def greedy_best_first_search(graph, start_node, goal_node, coords):
-    """
-    Executes Greedy Best-First Search where f(n) = h(n).
-    Uses a priority queue (heapq) to select the unvisited node closest to the goal.
-    """
-    if start_node not in graph or goal_node not in graph:
-        return None, [], []
 
-    # Priority queue stores: (heuristic_value, insertion_counter, current_node, path_taken)
+# ============================================================================== 
+# 4. GREEDY BEST-FIRST SEARCH
+# ============================================================================== 
+
+def greedy_best_first_search(graph, start_node, goal_node):
+    if start_node not in graph or goal_node not in graph:
+        return None, [], set()
+
     frontier = []
     counter = 0
     start_h = calculate_euclidean_distance(start_node, goal_node)
+
     heapq.heappush(frontier, (start_h, counter, start_node, [start_node]))
 
     visited = set()
     explored_sequence = []
 
     while frontier:
-        h_val, _, current_node, path = heapq.heappop(frontier)
+        h_value, _, current_node, path = heapq.heappop(frontier)
 
         if current_node in visited:
             continue
@@ -83,206 +112,249 @@ def greedy_best_first_search(graph, start_node, goal_node, coords):
         visited.add(current_node)
         explored_sequence.append(current_node)
 
-        # Goal check
         if current_node == goal_node:
             return path, explored_sequence, visited
 
-        # Expand adjacent road connections
         for neighbor, _ in graph[current_node]:
             if neighbor not in visited:
                 counter += 1
-                h_neighbor = calculate_euclidean_distance(neighbor, goal_node)
-                heapq.heappush(
-                    frontier,
-                    (h_neighbor, counter, neighbor, path + [neighbor])
-                )
+                neighbor_h = calculate_euclidean_distance(neighbor, goal_node)
+                heapq.heappush(frontier, (neighbor_h, counter, neighbor, path + [neighbor]))
 
     return None, explored_sequence, visited
 
-# ==============================================================================
+
+# ============================================================================== 
 # 5. PATH DISTANCE CALCULATION
-# ==============================================================================
+# ============================================================================== 
+
 def compute_total_path_distance(graph, path):
-    """Calculates cumulative road network distance along the chosen path."""
     if not path or len(path) < 2:
         return 0.0
 
-    total_cost = 0.0
-    for i in range(len(path) - 1):
-        u = path[i]
-        v = path[i + 1]
-        for neighbor, cost in graph[u]:
-            if neighbor == v:
-                total_cost += cost
-                break
-    return total_cost
+    total_distance = 0.0
 
-# ==============================================================================
-# 6. GRAPH VISUALIZATION (PLOTLY)
-# ==============================================================================
-def create_graph_figure(graph, coords, start_node, goal_node, final_path=None, explored_nodes=None):
-    """Builds an interactive 2D graph representation of the simulated city network."""
+    for i in range(len(path) - 1):
+        current = path[i]
+        next_node = path[i + 1]
+
+        for neighbor, distance in graph[current]:
+            if neighbor == next_node:
+                total_distance += distance
+                break
+
+    return total_distance
+
+
+# ============================================================================== 
+# 6. STREAMLIT ROAD NETWORK VISUALIZATION
+# ============================================================================== 
+
+def display_network(graph, coords, start_node, goal_node, final_path=None, explored_nodes=None):
     final_path = final_path or []
     explored_nodes = explored_nodes or []
-    path_edges = set()
-    for i in range(len(final_path) - 1):
-        path_edges.add((final_path[i], final_path[i+1]))
-        path_edges.add((final_path[i+1], final_path[i]))
 
-    fig = go.Figure()
+    node_data = []
 
-    # Draw Road Network Edges
-    edge_x = []
-    edge_y = []
-    mid_x = []
-    mid_y = []
-    edge_labels = []
+    for node in coords:
+        if node == start_node:
+            icon = "🟢"
+            status = "Emergency"
+            css_class = "start"
+        elif node == goal_node:
+            icon = "🔴"
+            status = "Hospital"
+            css_class = "hospital"
+        elif node in final_path:
+            icon = "🔵"
+            status = "Selected Route"
+            css_class = "route"
+        elif node in explored_nodes:
+            icon = "🟡"
+            status = "Explored"
+            css_class = "explored"
+        else:
+            icon = "⚪"
+            status = "Road Node"
+            css_class = "normal"
+
+        node_data.append(
+            f"""
+            <div class="node-card {css_class}">
+                <div class="node-icon">{icon}</div>
+                <div class="node-name">{node}</div>
+                <div class="node-status">{status}</div>
+            </div>
+            """
+        )
+
+    st.markdown(
+        """
+        <style>
+        .network-container {
+            background: #f7f9fc;
+            border: 1px solid #dfe6ee;
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 10px;
+        }
+        .network-title {
+            text-align: center;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #1f2937;
+        }
+        .node-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            align-items: center;
+        }
+        .node-card {
+            border-radius: 12px;
+            padding: 14px;
+            text-align: center;
+            background: white;
+            border: 2px solid #d1d5db;
+            min-height: 105px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        .node-card.start {
+            border-color: #22c55e;
+            background: #f0fdf4;
+        }
+        .node-card.hospital {
+            border-color: #ef4444;
+            background: #fef2f2;
+        }
+        .node-card.route {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+        .node-card.explored {
+            border-color: #f59e0b;
+            background: #fffbeb;
+        }
+        .node-icon {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        .node-name {
+            font-weight: 700;
+            font-size: 14px;
+            color: #1f2937;
+        }
+        .node-status {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 3px;
+        }
+        .route-display {
+            background: #eff6ff;
+            border-left: 5px solid #2563eb;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-weight: 600;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+        </style>
+        <div class="network-container">
+            <div class="network-title">🗺️ Simulated Road Network</div>
+            <div class="node-grid">
+        """,
+        unsafe_allow_html=True
+    )
+
+    for card in node_data:
+        st.markdown(card, unsafe_allow_html=True)
+
+    st.markdown(
+        """
+            </div>
+            <div class="legend">
+                <span>🟢 Emergency Location</span>
+                <span>🔴 Hospital</span>
+                <span>🔵 Selected Route</span>
+                <span>🟡 Explored Node</span>
+                <span>⚪ Normal Road Node</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown("#### 🛣️ Road Connections")
+
+    road_rows = []
     seen_edges = set()
 
     for node, neighbors in graph.items():
-        x0, y0 = coords[node]
-        for neighbor, dist in neighbors:
-            edge_id = tuple(sorted([node, neighbor]))
-            x1, y1 = coords[neighbor]
-            
-            # Base road line
-            edge_x.extend([x0, x1, None])
-            edge_y.extend([y0, y1, None])
+        for neighbor, distance in neighbors:
+            edge = tuple(sorted([node, neighbor]))
+            if edge not in seen_edges:
+                seen_edges.add(edge)
 
-            # Label road distances once per pair
-            if edge_id not in seen_edges:
-                seen_edges.add(edge_id)
-                mid_x.append((x0 + x1) / 2.0)
-                mid_y.append((y0 + y1) / 2.0)
-                edge_labels.append(f"{dist} km")
+                is_route = False
+                for i in range(len(final_path) - 1):
+                    if (
+                        final_path[i] == node and final_path[i + 1] == neighbor
+                    ) or (
+                        final_path[i] == neighbor and final_path[i + 1] == node
+                    ):
+                        is_route = True
+                        break
 
-    fig.add_trace(go.Scatter(
-        x=edge_x, y=edge_y,
-        mode="lines",
-        line=dict(color="#BDC3C7", width=2.5),
-        hoverinfo="none",
-        name="Roads (Edges)",
-        showlegend=False
-    ))
+                marker = "🔵" if is_route else "⚪"
+                road_rows.append(f"{marker} **{node}** ↔ **{neighbor}** — {distance} km")
 
-    # Road Distance Labels
-    fig.add_trace(go.Scatter(
-        x=mid_x, y=mid_y,
-        mode="text",
-        text=edge_labels,
-        textposition="middle center",
-        textfont=dict(color="#7F8C8D", size=11, family="Arial Black"),
-        hoverinfo="none",
-        name="Road Distances",
-        showlegend=False
-    ))
+    columns = st.columns(2)
+    for index, road in enumerate(road_rows):
+        with columns[index % 2]:
+            st.markdown(road)
 
-    # Highlight Final Route (if found)
-    if len(final_path) > 1:
-        route_x = []
-        route_y = []
-        for i in range(len(final_path) - 1):
-            u, v = final_path[i], final_path[i+1]
-            route_x.extend([coords[u][0], coords[v][0], None])
-            route_y.extend([coords[u][1], coords[v][1], None])
 
-        fig.add_trace(go.Scatter(
-            x=route_x, y=route_y,
-            mode="lines",
-            line=dict(color="#2980B9", width=6),
-            hoverinfo="none",
-            name="🔵 Final Selected Route"
-        ))
+# ============================================================================== 
+# 7. STREAMLIT APPLICATION
+# ============================================================================== 
 
-    # Group and render nodes with distinct visual markers
-    for node, (x, y) in coords.items():
-        h_val = calculate_euclidean_distance(node, goal_node)
-        
-        if node == start_node:
-            marker_color = "#2ECC71"  # Green
-            marker_symbol = "circle"
-            marker_size = 28
-            category = "🟢 Start / Emergency Spot"
-        elif node == goal_node:
-            marker_color = "#E74C3C"  # Red
-            marker_symbol = "cross"
-            marker_size = 30
-            category = "🔴 Destination Hospital"
-        elif node in final_path:
-            marker_color = "#3498DB"  # Blue
-            marker_symbol = "circle"
-            marker_size = 22
-            category = "🔵 Route Junction"
-        elif node in explored_nodes:
-            marker_color = "#F39C12"  # Yellow / Orange
-            marker_symbol = "circle"
-            marker_size = 20
-            category = "🟡 Explored Node"
-        else:
-            marker_color = "#34495E"  # Dark Slate
-            marker_symbol = "circle"
-            marker_size = 18
-            category = "⚫ Normal Road Node"
-
-        fig.add_trace(go.Scatter(
-            x=[x], y=[y],
-            mode="markers+text",
-            marker=dict(
-                color=marker_color,
-                size=marker_size,
-                symbol=marker_symbol,
-                line=dict(width=2, color="#FFFFFF")
-            ),
-            text=[f"<b>{node}</b>"],
-            textposition="top center",
-            textfont=dict(size=12, color="#2C3E50"),
-            hoverinfo="text",
-            hovertext=[f"<b>{node}</b><br>Heuristic h(n): {h_val:.2f} km<br>Status: {category}"],
-            name=node,
-            showlegend=False
-        ))
-
-    # Layout styling
-    fig.update_layout(
-        title="<b>Simulated Road Network & Search State</b>",
-        title_x=0.02,
-        xaxis=dict(showgrid=True, zeroline=False, showticklabels=False, range=[0, 10.5]),
-        yaxis=dict(showgrid=True, zeroline=False, showticklabels=False, range=[0, 7.5]),
-        plot_bgcolor="#F8F9FA",
-        paper_bgcolor="#FFFFFF",
-        margin=dict(l=20, r=20, t=50, b=20),
-        height=520,
-        showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-
-    return fig
-
-# ==============================================================================
-# 7. STREAMLIT USER INTERFACE
-# ==============================================================================
 def main():
-    # Header Section
     st.title("🚑 AI-Based Emergency Route Finder")
     st.subheader("Greedy Best-First Search Based Route Planning")
     st.markdown(
-        "Find a goal-directed emergency route through a simulated road network using "
-        "**Greedy Best-First Search**."
+        """
+        Find a goal-directed emergency route through a
+        **simulated road network** using
+        **Greedy Best-First Search**.
+        """
     )
-    st.caption("⚠️ **Notice:** This application utilizes a simulated road network for AI algorithmic demonstration.")
+
+    st.warning(
+        "⚠️ This application uses a simulated road network for AI algorithm demonstration. It does not provide real-time GPS or traffic navigation."
+    )
     st.divider()
 
-    # Sidebar Settings
     st.sidebar.header("⚙️ Emergency Route Settings")
-    
+
     available_nodes = list(ROAD_NETWORK.keys())
     hospitals = ["Hospital A", "Hospital B"]
-    start_locations = [n for n in available_nodes if n not in hospitals]
+    start_locations = [node for node in available_nodes if node not in hospitals]
 
     selected_start = st.sidebar.selectbox(
         "Emergency Location",
         options=start_locations,
-        index=start_locations.index("Accident Spot") if "Accident Spot" in start_locations else 0
+        index=(start_locations.index("Accident Spot") if "Accident Spot" in start_locations else 0)
     )
 
     selected_goal = st.sidebar.selectbox(
@@ -293,99 +365,103 @@ def main():
 
     search_button = st.sidebar.button("🚑 Find Emergency Route", type="primary", use_container_width=True)
 
-    # Main Area Layout
-    if search_button:
-        if selected_start == selected_goal:
-            st.warning("The emergency location and destination hospital cannot be the same.")
-            fig = create_graph_figure(ROAD_NETWORK, COORDINATES, selected_start, selected_goal)
-            st.plotly_chart(fig, use_container_width=True)
-            return
+    if not search_button:
+        st.info("👉 Select the emergency location and hospital from the sidebar, then click **Find Emergency Route**.")
+        display_network(ROAD_NETWORK, COORDINATES, selected_start, selected_goal)
+        return
 
-        # Execute Search
-        path, explored_order, visited_nodes = greedy_best_first_search(
-            ROAD_NETWORK, selected_start, selected_goal, COORDINATES
+    if selected_start == selected_goal:
+        st.warning("The emergency location and destination hospital cannot be the same.")
+        display_network(ROAD_NETWORK, COORDINATES, selected_start, selected_goal)
+        return
+
+    path, explored_order, visited_nodes = greedy_best_first_search(ROAD_NETWORK, selected_start, selected_goal)
+
+    if path:
+        total_distance = compute_total_path_distance(ROAD_NETWORK, path)
+        st.success("✅ Emergency Route Found Successfully!")
+
+        metric1, metric2, metric3 = st.columns(3)
+        metric1.metric("📏 Path Distance", f"{total_distance:.1f} km")
+        metric2.metric("🔍 Nodes Explored", str(len(explored_order)))
+        metric3.metric("🧠 Algorithm", "Greedy BFS")
+
+        st.markdown("### 🚑 Selected Emergency Route")
+        route_text = " ➜ ".join(path)
+        st.markdown(f"""
+        <div class="route-display">
+            {route_text}
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("### 🔍 Exploration Sequence")
+        exploration_text = " ➜ ".join([f"{index + 1}. {node}" for index, node in enumerate(explored_order)])
+        st.info(exploration_text)
+
+        display_network(ROAD_NETWORK, COORDINATES, selected_start, selected_goal, path, explored_order)
+
+        st.subheader(f"📊 Heuristic Table: h(n) to {selected_goal}")
+        st.markdown(
+            """
+            The heuristic **h(n)** represents the estimated straight-line Euclidean distance from each location to the selected destination.
+            """
         )
 
-        if path:
-            total_distance = compute_total_path_distance(ROAD_NETWORK, path)
+        heuristic_data = []
+        for node in ROAD_NETWORK.keys():
+            h_value = calculate_euclidean_distance(node, selected_goal)
+            if node in path:
+                status = "🔵 In Final Path"
+            elif node in visited_nodes:
+                status = "🟡 Explored"
+            else:
+                status = "⚪ Unvisited"
 
-            # Metrics Display
-            st.success("✅ **Emergency Route Found Successfully!**")
-            m1, m2, m3 = st.columns(3)
-            m1.metric(label="📏 Path Distance", value=f"{total_distance:.1f} km")
-            m2.metric(label="🔍 Nodes Explored", value=f"{len(explored_order)}")
-            m3.metric(label="🧠 Algorithm", value="Greedy BFS")
+            heuristic_data.append({
+                "Location": node,
+                "Heuristic h(n) [km]": f"{h_value:.2f}",
+                "Status": status
+            })
 
-            # Route Trajectory Display
-            st.markdown("#### **Selected Route Path:**")
-            st.info(" ➔ ".join([f"**{node}**" for node in path]))
-
-            # Exploration Order
-            st.markdown("#### **Exploration Sequence (Node Expansion):**")
-            exploration_str = " ➔ ".join([f"**{idx + 1}. {node}**" for idx, node in enumerate(explored_order)])
-            st.write(exploration_str)
-
-            # Updated Graph Visualization
-            fig = create_graph_figure(
-                ROAD_NETWORK, COORDINATES, selected_start, selected_goal, path, explored_order
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-            # Heuristic Distance Table
-            st.subheader(f"📊 Heuristic Table: $h(n)$ to {selected_goal}")
-            st.markdown(
-                "The heuristic $h(n)$ represents the straight-line Euclidean distance from each location "
-                "to the chosen destination."
-            )
-
-            heuristic_data = []
-            for node in ROAD_NETWORK.keys():
-                h_val = calculate_euclidean_distance(node, selected_goal)
-                status = "In Path" if node in path else ("Explored" if node in visited_nodes else "Unvisited")
-                heuristic_data.append({
-                    "Location Node": node,
-                    "Heuristic Distance h(n) [km]": f"{h_val:.2f}",
-                    "Status": status
-                })
-
-            st.dataframe(heuristic_data, use_container_width=True)
-
-        else:
-            st.error("❌ No path could be found between the selected locations.")
-            fig = create_graph_figure(ROAD_NETWORK, COORDINATES, selected_start, selected_goal)
-            st.plotly_chart(fig, use_container_width=True)
-
+        st.dataframe(heuristic_data, use_container_width=True, hide_index=True)
     else:
-        # Default State Before Search
-        st.info("👉 Select the emergency spot and hospital in the sidebar, then click **'Find Emergency Route'**.")
-        fig = create_graph_figure(ROAD_NETWORK, COORDINATES, selected_start, selected_goal)
-        st.plotly_chart(fig, use_container_width=True)
+        st.error("❌ No path could be found between the selected locations.")
+        display_network(ROAD_NETWORK, COORDINATES, selected_start, selected_goal, explored_nodes=explored_order)
 
     st.divider()
 
-    # Expandable Educational Concept Section
     with st.expander("🧠 How Greedy Best-First Search Works"):
         st.markdown(
             """
-            ### **Concept & Evaluation Function**
-            **Greedy Best-First Search** is an informed search algorithm that expands the node estimated to be closest to the goal.
-            
-            The node evaluation function is defined as:
-            $$f(n) = h(n)$$
-            
+            ### Greedy Best-First Search
+
+            Greedy Best-First Search is an **informed search algorithm** that expands the node estimated to be closest to the goal.
+
+            ### Evaluation Function
+
+            **f(n) = h(n)**
+
             Where:
-            * $f(n)$ is the total evaluation score of node $n$.
-            * $h(n)$ is the **heuristic estimate** of the cost from node $n$ to the goal.
+            - **f(n)** = evaluation value of the node
+            - **h(n)** = heuristic estimate of the cost from the node to the goal
 
-            ### **Euclidean Distance Heuristic**
-            In this application, the heuristic is calculated using the standard 2D Euclidean distance formula:
-            $$h(n) = \\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}$$
+            ### Euclidean Distance Heuristic
 
-            ### **Key Characteristics**
-            * **Goal-Directed:** Greedy BFS aggressively prioritizes immediate progress toward the destination.
-            * **Optimality Trade-off:** While fast, Greedy Best-First Search **does not guarantee the shortest or optimal path**, because it completely ignores the backward path cost $g(n)$ accumulated so far.
+            This application uses Euclidean distance:
+
+            **h(n) = √((x₂ - x₁)² + (y₂ - y₁)²)**
+
+            ### Key Characteristics
+            - 🎯 **Goal-Directed:** Prioritizes nodes that appear closer to the destination.
+            - ⚡ **Fast:** It can reach the goal quickly in many cases.
+            - ⚠️ **Not Always Optimal:** It does not guarantee the shortest route because it considers the heuristic and ignores the accumulated path cost.
             """
         )
+
+
+# ============================================================================== 
+# 8. RUN APPLICATION
+# ============================================================================== 
 
 if __name__ == "__main__":
     main()
