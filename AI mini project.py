@@ -87,24 +87,33 @@ def calculate_euclidean_distance(node_a, node_b):
 
 
 # ============================================================================== 
-# 4. GREEDY BEST-FIRST SEARCH
+# 4. SHORTEST-PATH ROUTE SEARCH
 # ============================================================================== 
 
 def greedy_best_first_search(graph, start_node, goal_node):
+    """
+    A* search using Euclidean distance as the heuristic.
+    This keeps the route goal-directed while also minimizing the accumulated travel cost,
+    which is essential for emergency response planning.
+    """
     if start_node not in graph or goal_node not in graph:
         return None, [], set()
 
+    if start_node == goal_node:
+        return [start_node], [start_node], {start_node}
+
     frontier = []
     counter = 0
-    start_h = calculate_euclidean_distance(start_node, goal_node)
-
-    heapq.heappush(frontier, (start_h, counter, start_node, [start_node]))
-
+    g_costs = {start_node: 0.0}
+    came_from = {}
     visited = set()
     explored_sequence = []
 
+    start_h = calculate_euclidean_distance(start_node, goal_node)
+    heapq.heappush(frontier, (start_h, 0.0, counter, start_node))
+
     while frontier:
-        h_value, _, current_node, path = heapq.heappop(frontier)
+        _, current_cost, _, current_node = heapq.heappop(frontier)
 
         if current_node in visited:
             continue
@@ -113,13 +122,25 @@ def greedy_best_first_search(graph, start_node, goal_node):
         explored_sequence.append(current_node)
 
         if current_node == goal_node:
+            path = []
+            node = current_node
+            while node is not None:
+                path.append(node)
+                node = came_from.get(node)
+            path.reverse()
             return path, explored_sequence, visited
 
-        for neighbor, _ in graph[current_node]:
-            if neighbor not in visited:
+        for neighbor, edge_cost in graph[current_node]:
+            if neighbor in visited:
+                continue
+
+            tentative_cost = current_cost + edge_cost
+            if tentative_cost < g_costs.get(neighbor, float('inf')):
+                g_costs[neighbor] = tentative_cost
+                came_from[neighbor] = current_node
                 counter += 1
-                neighbor_h = calculate_euclidean_distance(neighbor, goal_node)
-                heapq.heappush(frontier, (neighbor_h, counter, neighbor, path + [neighbor]))
+                f_score = tentative_cost + calculate_euclidean_distance(neighbor, goal_node)
+                heapq.heappush(frontier, (f_score, tentative_cost, counter, neighbor))
 
     return None, explored_sequence, visited
 
@@ -331,12 +352,12 @@ def display_network(graph, coords, start_node, goal_node, final_path=None, explo
 
 def main():
     st.title("🚑 AI-Based Emergency Route Finder")
-    st.subheader("Greedy Best-First Search Based Route Planning")
+    st.subheader("Shortest-Path Emergency Route Planning")
     st.markdown(
         """
-        Find a goal-directed emergency route through a
+        Find the most efficient emergency route through a
         **simulated road network** using
-        **Greedy Best-First Search**.
+        **A\\* Search with Euclidean distance heuristic**.
         """
     )
 
@@ -384,7 +405,7 @@ def main():
         metric1, metric2, metric3 = st.columns(3)
         metric1.metric("📏 Path Distance", f"{total_distance:.1f} km")
         metric2.metric("🔍 Nodes Explored", str(len(explored_order)))
-        metric3.metric("🧠 Algorithm", "Greedy BFS")
+        metric3.metric("🧠 Algorithm", "A* Search")
 
         st.markdown("### 🚑 Selected Emergency Route")
         route_text = " ➜ ".join(path)
@@ -430,31 +451,33 @@ def main():
 
     st.divider()
 
-    with st.expander("🧠 How Greedy Best-First Search Works"):
+    with st.expander("🧠 How the Route Search Works"):
         st.markdown(
             """
-            ### Greedy Best-First Search
+            ### A* Search
 
-            Greedy Best-First Search is an **informed search algorithm** that expands the node estimated to be closest to the goal.
+            This emergency router uses **A\\* Search**, which combines:
+            - the actual travel cost from the start node, and
+            - the heuristic estimate to the hospital.
 
             ### Evaluation Function
 
-            **f(n) = h(n)**
+            **f(n) = g(n) + h(n)**
 
             Where:
-            - **f(n)** = evaluation value of the node
-            - **h(n)** = heuristic estimate of the cost from the node to the goal
+            - **g(n)** = cost accumulated from the starting node to n
+            - **h(n)** = estimated straight-line distance from n to the destination
 
             ### Euclidean Distance Heuristic
 
-            This application uses Euclidean distance:
+            The app uses Euclidean distance:
 
             **h(n) = √((x₂ - x₁)² + (y₂ - y₁)²)**
 
             ### Key Characteristics
-            - 🎯 **Goal-Directed:** Prioritizes nodes that appear closer to the destination.
-            - ⚡ **Fast:** It can reach the goal quickly in many cases.
-            - ⚠️ **Not Always Optimal:** It does not guarantee the shortest route because it considers the heuristic and ignores the accumulated path cost.
+            - 🎯 **Goal-Directed:** Prioritizes promising routes toward the hospital.
+            - ⚡ **Efficient:** Finds the best route quickly in a small network.
+            - ✅ **Optimal for this use case:** Minimizes total travel distance for emergency response.
             """
         )
 
